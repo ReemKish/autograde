@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autograde"
+version = "0.0.1"
+authors = [{ name = "Re'em Kishinevsky", email = "reem.kishinevsky@gmail.com" }]
+description = "Automatic coding assignment grading framework"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+  "tomli",
+  "dacite",
+  "pytest",
+  "typer"
+]
+
+[tool.setuptools.packages.find]
+exclude = ["prog*"]
