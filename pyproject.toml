@@ -10,10 +10,8 @@ description = "Automatic coding assignment grading framework"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-  "tomli",
-  "dacite",
   "pytest",
-  "typer"
+  "cyclopts",
 ]
 
 [tool.setuptools.packages.find]
