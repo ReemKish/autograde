@@ -1,29 +1,13 @@
-import datetime
 import json
 import logging
 import shutil
 from dataclasses import dataclass
-from itertools import chain
 from pathlib import Path
-from typing import Any, ClassVar, Iterable, Protocol
+from typing import ClassVar
 
 import autograde
 from autograde.assignments import AssignmentSpec
-from autograde.models import Submission
-
-
-@dataclass(frozen=True)
-class SubmissionRecord:
-    submission_key: str
-    # [(relpath_under_submission, src_path), ...]
-    files: Iterable[tuple[Path, Path]] | None = None
-    handed_in: datetime.datetime | None = None
-    due_date: datetime.datetime | None = None
-    attrs: dict[str, Any] | None = None
-
-
-class IngestSource(Protocol):
-    def records(self) -> Iterable[SubmissionRecord]: ...
+from autograde.types import Submission, SubmissionRecord
 
 
 @dataclass
@@ -60,12 +44,9 @@ class GradingEnvironment:
                     "assignment_key": self.assignment.key,
                     "submissions": {
                         sub.submission_key: {
-                            "handed_in": sub.handed_in.isoformat()
-                            if sub.handed_in
-                            else None,
-                            "due_date": sub.due_date.isoformat()
-                            if sub.due_date
-                            else None,
+                            "submitted_at": sub.submitted_at
+                            and sub.submitted_at.isoformat(),
+                            "due_at": sub.due_at and sub.due_at.isoformat(),
                             "attrs": sub.attrs,
                         }
                         for sub in self.submissions.values()
@@ -106,9 +87,15 @@ class GradingEnvironment:
         self.assignment = assignment
         self.submissions = submissions
 
-    def ingest(self, *sources: IngestSource) -> None:
-        for record in chain(*(source.records() for source in sources)):
-            self.update(record)
+    def import_from(self, source: str | Path) -> None:
+        source = Path(source)
+        for importer in self.assignment.importers:
+            if (records := importer(source)) is not None:
+                for record in records:
+                    self.update(record)
+                break
+        else:
+            logging.warning(f"No importer could handle source file: {source}")
 
     def update(self, record: SubmissionRecord) -> None:
         if record.submission_key not in self.submissions:
@@ -117,8 +104,8 @@ class GradingEnvironment:
                 directory=self.root / self.submissions_dirname / record.submission_key,
             )
         submission = self.submissions[record.submission_key]
-        submission.handed_in = record.handed_in or submission.handed_in
-        submission.due_date = record.due_date or submission.due_date
+        submission.submitted_at = record.handed_in or submission.submitted_at
+        submission.due_at = record.due_date or submission.due_at
         submission.attrs.update(record.attrs or {})
         sdir = submission.directory
         sdir.mkdir(parents=True, exist_ok=True)
@@ -135,20 +122,7 @@ class GradingEnvironment:
                     dest_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(src_path, dest_path)
 
-        # Run normalizers
-        # for normalizer in sorted(
-        #     autograde.normalizers.all(), key=lambda n: n.order
-        # ):
-        #     logging.debug(
-        #         f"Running normalizer {normalizer.name} for submission {record.student_key}"
-        #     )
-        #     normalizer(self, record.student_key, sdir)
+        # Run normalizers.
+        for normalize in self.assignment.normalizers:
+            normalize(sdir)
 
-
-class Normalizer(Protocol):
-    name: str
-    order: int
-
-    def __call__(
-        self, env: GradingEnvironment, student_key: str, sdir: Path
-    ) -> None: ...

@@ -1,26 +1,11 @@
-# autograde/assignments.py
-from typing import ClassVar, Dict, List, Protocol, runtime_checkable
+from typing import Dict, List
 
+from autograde.types import AssignmentSpec
 
-@runtime_checkable
-class AssignmentSpec(Protocol):
-    key: ClassVar[str]
-    title:ClassVar[str]
-    required_submission_files: ClassVar[tuple[str, ...]]
 
 def assignment(cls: type[AssignmentSpec]) -> type[AssignmentSpec]:
     register(cls)
     return cls
-
-# @dataclass(frozen=True)
-# class AssignmentSpec:
-#     key: str
-#     title: str
-#     required_submission_files: List[str]
-    # import_submissions: Importer
-    # import_metadata: Optional[Importer] = None
-    # normalizers: List[Normalizer] = field(default_factory=list)
-    # tests_entrypoint: Optional[str] = None
 
 _registry: Dict[str, type[AssignmentSpec]] = {}
 _frozen = False
