@@ -3,7 +3,7 @@ import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Mapping, Self
 
 import autograde
 from autograde.assignments import AssignmentSpec
@@ -19,22 +19,32 @@ class GradingEnvironment:
     submissions_dirname: ClassVar[str] = "submissions"
     metadata_filename: ClassVar[str] = "autograde.json"
 
-    def __init__(self, root: str | Path, assignment_key: str | None = None):
-        root = Path(root)
-        if root.exists():
-            try:
-                self._load(root)
-            except FileNotFoundError:
-                raise FileExistsError(
-                    f"Directory {root} already exists and is not a valid grading environment"
-                ) from None
-        else:
-            assert (
-                assignment_key is not None
-            ), "Must provide assignment_key when initializing new environment"
-            self.root = root
-            self.assignment = autograde.assignments.get(assignment_key)
-            self.submissions = {}
+    # def __init__(
+    #     self,
+    #     root: str | Path,
+    #     assignment: type[AssignmentSpec],
+    #     submissions: Mapping[str, Submission],
+    # ):
+    #     self.root = Path(root)
+    #     self.assignment = assignment
+    #     self.submissions = dict(submissions)
+
+    # def __init__(self, root: str | Path, assignment_key: str | None = None):
+    #     root = Path(root)
+    #     if root.exists():
+    #         try:
+    #             self._load(root)
+    #         except FileNotFoundError:
+    #             raise FileExistsError(
+    #                 f"Directory {root} already exists and is not a valid grading environment"
+    #             ) from None
+    #     else:
+    #         assert (
+    #             assignment_key is not None
+    #         ), "Must provide assignment_key when initializing new environment"
+    #         self.root = root
+    #         self.assignment = autograde.assignments.get(assignment_key)
+    #         self.submissions = {}
 
     def save(self) -> None:
         (self.root / self.submissions_dirname).mkdir(parents=True, exist_ok=True)
@@ -56,13 +66,11 @@ class GradingEnvironment:
                 indent=2,
             )
 
-    def _load(self, path: str | Path):
-        assert (
-            not hasattr(self, "root") or getattr(self, "root") is None
-        ), "Environment already loaded"
+    @classmethod
+    def load(cls, path: str | Path):
         path = Path(path)
-        metadata_file = path / self.metadata_filename
-        submissions_dir = path / self.submissions_dirname
+        metadata_file = path / cls.metadata_filename
+        submissions_dir = path / cls.submissions_dirname
         if not (path.exists() and metadata_file.exists() and submissions_dir.exists()):
             raise FileNotFoundError(f"Not a valid grading environment: {path}")
         with metadata_file.open("r") as f:
@@ -83,9 +91,24 @@ class GradingEnvironment:
             for submission_key, attrs in data.get("submissions", {}).items()
         }
 
-        self.root = path
-        self.assignment = assignment
-        self.submissions = submissions
+        return cls(
+            root=path,
+            assignment=assignment,
+            submissions=submissions,
+        )
+
+    @classmethod
+    def new(cls, path: str | Path, assignment_key: str) -> Self:
+        path = Path(path)
+        if path.exists():
+            raise FileExistsError(f"Directory {path} already exists")
+        self = cls(
+            root=path,
+            assignment=autograde.assignments.get(assignment_key),
+            submissions={},
+        )
+        self.save()
+        return self
 
     def import_from(self, source: str | Path) -> None:
         source = Path(source)
@@ -126,3 +149,4 @@ class GradingEnvironment:
         for normalize in self.assignment.normalizers:
             normalize(sdir)
 
+        self.save()
