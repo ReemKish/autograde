@@ -14,32 +14,34 @@ class MoodleAssignmentsArchiveImporter:
     def __call__(self, file_path: Path) -> Iterable[SubmissionRecord] | None:
         if not file_path.is_file() or file_path.suffix.lower() != ".zip":
             return None
+        records = []
         logging.info(f"Extracting submissions from Moodle zip archive: {file_path}")
-        with tempfile.TemporaryDirectory() as submission_tmp_dir_name:
-            submission_tmp_dir = Path(submission_tmp_dir_name)
-            with zipfile.ZipFile(file_path, "r") as zf:
-                zf.extractall(submission_tmp_dir)
+        submission_tmp_dir_name = tempfile.mkdtemp(prefix="autograde_")
+        submission_tmp_dir = Path(submission_tmp_dir_name)
+        with zipfile.ZipFile(file_path, "r") as zf:
+            zf.extractall(submission_tmp_dir)
 
-            for dir in submission_tmp_dir.iterdir():
-                m = re.match(
-                    r"^(?P<name>.+)_(?P<id>\d+)_assignsubmission_file$", dir.name
-                )
-                if not m:
-                    logging.warning(f"Skipping unrecognized directory: {dir}")
-                    continue
-                student_name = m.group("name")
-                student_canonical_name = (
-                    student_name.replace(" ", "_").replace(" ", "_").lower()
-                )
-                student_id = m.group("id")
-                yield SubmissionRecord(
-                    submission_key=f"{student_canonical_name}-{student_id}",
-                    files=[
-                        (filepath.relative_to(dir), filepath)
-                        for filepath in dir.rglob("*")
-                    ],
-                    attrs={"student_name": student_name, "student_id": student_id},
-                )
+        for dir in submission_tmp_dir.iterdir():
+            m = re.match(
+                r"^(?P<name>.+)_(?P<id>\d+)_assignsubmission_file$", dir.name
+            )
+            if not m:
+                logging.warning(f"Skipping unrecognized directory: {dir}")
+                continue
+            student_name = m.group("name")
+            student_canonical_name = (
+                student_name.replace(" ", "_").replace(" ", "_").lower()
+            )
+            student_id = m.group("id")
+            records.append(SubmissionRecord(
+                submission_key=f"{student_canonical_name}-{student_id}",
+                files=[
+                    (filepath.relative_to(dir), filepath)
+                    for filepath in dir.rglob("*")
+                ],
+                attrs={"student_name": student_name, "student_id": student_id},
+            ))
+        return records
 
 
 class MoodleGradingWorksheetImporter:
@@ -58,13 +60,12 @@ class MoodleGradingWorksheetImporter:
         with file_path.open(newline="") as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
+                if row["Status"].startswith("No submission"):
+                    continue
                 student_id = row["\ufeffIdentifier"][len("Participant ") :]
                 student_name = row["Full name"]
-                status = row["Status"]
                 handed_in = self._parse_csv_time(row["Last modified (submission)"])
                 due_date = self._parse_csv_time(row["Due date"])
-                if status.startswith("No submission") or not handed_in:
-                    continue
                 student_canonical_name = (
                     student_name.replace(" ", "_").replace(" ", "_").lower()
                 )
